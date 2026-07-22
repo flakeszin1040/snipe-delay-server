@@ -63,9 +63,7 @@ async function conectarTikTok(username) {
   estado.ultimoErro = null;
   enviarStatus();
 
-  tiktokConn = new TikTokLiveConnection(username, {
-    enableExtendedGiftInfo: true,
-  });
+  tiktokConn = new TikTokLiveConnection(username);
 
   try {
     const state = await tiktokConn.connect();
