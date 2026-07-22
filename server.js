@@ -7,7 +7,15 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const { WebcastPushConnection } = require('tiktok-live-connector');
+const { TikTokLiveConnection, WebcastEvent, ControlEvent, SignConfig } = require('tiktok-live-connector');
+
+// Se você tiver uma chave gratuita da Euler Stream (recomendado,
+// evita bloqueios), configure a variável de ambiente EULER_API_KEY
+// no Render. Sem ela, o servidor ainda funciona, mas usando o limite
+// gratuito compartilhado (pode falhar com mais frequência).
+if (process.env.EULER_API_KEY) {
+  SignConfig.apiKey = process.env.EULER_API_KEY;
+}
 
 const app = express();
 app.use(cors());
@@ -55,7 +63,7 @@ async function conectarTikTok(username) {
   estado.ultimoErro = null;
   enviarStatus();
 
-  tiktokConn = new WebcastPushConnection(username, {
+  tiktokConn = new TikTokLiveConnection(username, {
     enableExtendedGiftInfo: true,
   });
 
@@ -67,7 +75,7 @@ async function conectarTikTok(username) {
     console.log(`Conectado na live de @${username} (roomId ${state.roomId})`);
   } catch (err) {
     estado.status = 'erro';
-    estado.ultimoErro = 'Não foi possível conectar. Confira se o usuário está ao vivo agora.';
+    estado.ultimoErro = err?.message || 'Não foi possível conectar. Confira se o usuário está ao vivo agora.';
     enviarStatus();
     console.error('Erro ao conectar:', err?.message || err);
     return;
@@ -77,7 +85,7 @@ async function conectarTikTok(username) {
   // Presentes "com combo" (giftType 1) disparam o evento a cada
   // repetição; só contamos o valor final quando o combo acaba
   // (repeatEnd === true) pra não duplicar a contagem.
-  tiktokConn.on('gift', (data) => {
+  tiktokConn.on(WebcastEvent.GIFT, (data) => {
     const ehCombo = data.giftType === 1;
     if (ehCombo && !data.repeatEnd) return;
 
@@ -85,8 +93,8 @@ async function conectarTikTok(username) {
 
     broadcast({
       type: 'gift',
-      uniqueId: data.uniqueId,
-      nickname: data.nickname || data.uniqueId,
+      uniqueId: data.user?.uniqueId,
+      nickname: data.user?.nickname || data.user?.uniqueId,
       giftName: data.giftName,
       diamondCount: data.diamondCount,
       repeatCount: data.repeatCount,
@@ -94,13 +102,13 @@ async function conectarTikTok(username) {
     });
   });
 
-  tiktokConn.on('disconnected', () => {
+  tiktokConn.on(ControlEvent.DISCONNECTED, () => {
     estado.status = 'desconectado';
     enviarStatus();
     console.log(`Desconectado da live de @${username}`);
   });
 
-  tiktokConn.on('streamEnd', () => {
+  tiktokConn.on(ControlEvent.STREAM_END, () => {
     estado.status = 'desconectado';
     estado.ultimoErro = 'A live foi encerrada.';
     enviarStatus();
